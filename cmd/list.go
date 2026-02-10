@@ -15,6 +15,7 @@ import (
 
 var (
 	withLabel    string
+	withoutLabel string
 	outputFormat string
 )
 
@@ -22,14 +23,17 @@ var listCmd = &cobra.Command{
 	Use:   "list <owner/repo> <release-branch-name>",
 	Short: "List commits in main that are missing from a release branch",
 	Long: `List all commits present in main but absent from the specified release branch.
-Use --with-label to filter to only commits whose associated PR carries a specific label.`,
+Use --with-label to filter to only commits whose associated PR carries a specific label.
+Use --without-label to exclude commits whose associated PR carries a specific label.`,
 	Args: cobra.ExactArgs(2),
 	RunE: runList,
 }
 
 func init() {
 	listCmd.Flags().StringVar(&withLabel, "with-label", "", "filter to commits whose associated PR has this label")
+	listCmd.Flags().StringVar(&withoutLabel, "without-label", "", "exclude commits whose associated PR has this label")
 	listCmd.Flags().StringVarP(&outputFormat, "output", "o", "table", "output format: table or yaml")
+	listCmd.MarkFlagsMutuallyExclusive("with-label", "without-label")
 	rootCmd.AddCommand(listCmd)
 }
 
@@ -53,10 +57,14 @@ func runList(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
 	var commits []gh.MissingCommit
-	if withLabel != "" {
-		fmt.Fprintf(os.Stderr, "Fetching commits and checking PRs for label %q (this may take a moment)...\n", withLabel)
+	switch {
+	case withLabel != "":
+		fmt.Fprintf(os.Stderr, "Fetching commits with label %q...\n", withLabel)
 		commits, err = client.ListMissingCommitsWithLabel(ctx, owner, repo, releaseBranch, withLabel)
-	} else {
+	case withoutLabel != "":
+		fmt.Fprintf(os.Stderr, "Fetching commits without label %q...\n", withoutLabel)
+		commits, err = client.ListMissingCommitsWithoutLabel(ctx, owner, repo, releaseBranch, withoutLabel)
+	default:
 		commits, err = client.ListMissingCommits(ctx, owner, repo, releaseBranch)
 	}
 	if err != nil {

@@ -82,6 +82,36 @@ func (c *Client) ListMissingCommitsWithLabel(ctx context.Context, owner, repo, r
 	return commits, nil
 }
 
+// ListMissingCommitsWithoutLabel returns commits not in the release branch
+// whose associated PR does NOT carry the given label.
+// Results preserve topological order from the compare API.
+func (c *Client) ListMissingCommitsWithoutLabel(ctx context.Context, owner, repo, releaseBranch, label string) ([]MissingCommit, error) {
+	labeledPRs, err := c.listMergedPRsWithLabel(ctx, owner, repo, label)
+	if err != nil {
+		return nil, fmt.Errorf("listing PRs with label %q: %w", label, err)
+	}
+
+	labeledSHAs := make(map[string]struct{}, len(labeledPRs))
+	for _, pr := range labeledPRs {
+		labeledSHAs[pr.GetMergeCommitSHA()] = struct{}{}
+	}
+
+	compareCommits, err := c.compareBranches(ctx, owner, repo, releaseBranch, "main")
+	if err != nil {
+		return nil, fmt.Errorf("comparing branches: %w", err)
+	}
+
+	var commits []MissingCommit
+	for _, rc := range compareCommits {
+		if _, hasLabel := labeledSHAs[rc.GetSHA()]; hasLabel {
+			continue
+		}
+		commits = append(commits, repoCommitToMissing(rc))
+	}
+
+	return commits, nil
+}
+
 func repoCommitToMissing(rc *github.RepositoryCommit) MissingCommit {
 	return MissingCommit{
 		SHA:     rc.GetSHA(),
